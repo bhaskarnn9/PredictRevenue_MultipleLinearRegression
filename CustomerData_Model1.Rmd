@@ -1,0 +1,159 @@
+---
+title: "CustomerData_Model1"
+author: "bneella"
+date: "31/01/2020"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+# Step1 : Clear environment
+
+```{r}
+rm(list = ls(all=TRUE))
+```
+
+# Step2 : Read and understand customer data
+
+```{r}
+raw_data = read.csv('CustomerData.csv')
+dim(raw_data)
+summary(raw_data)
+```
+
+# Step3 : Drop Customer ID because it has no significance
+
+```{r}
+raw_data$CustomerID = NULL
+writeLines('\n Customer data after dropping CustomerID')
+names(raw_data)
+```
+
+# Step4 : Check data-types of all features
+
+```{r}
+str(raw_data)
+```
+
+# Step5 : Convert City to categorical data
+
+```{r}
+raw_data$City = as.factor(raw_data$City)
+str(raw_data)
+```
+
+
+# Step6 : Split Train and Test data
+
+```{r}
+set.seed(007)
+train_rows = sample(x=1 : nrow(raw_data), size = 0.7*nrow(raw_data))
+train_data = raw_data[train_rows, ]
+test_data = raw_data[-train_rows, ]
+```
+
+# Step7 : Check for missing values
+
+```{r}
+# method 1 to get count of na values
+numberOfNa_befofre = length(which(is.na(train_data)))
+print(paste('count of na values before handling: ', numberOfNa_befofre))
+```
+
+# Step8 : Handle missing values
+
+```{r}
+sum(is.na(train_data))
+library(caret)
+#create object with medianImpute values based on trainset
+imputer_values = preProcess(x = train_data, method = 'medianImpute')
+# now plug medianInpute values in trainset's NA values
+train_data = predict(object = imputer_values, newdata = train_data)
+sum(is.na(train_data))
+# now plug medianInpute values in testset's NA values
+test_data <- predict(object = imputer_values, newdata = test_data)
+# method 2 to get count of na values
+sum(is.na(test_data))
+```
+
+# Step9 : Check again for missing values
+
+```{r}
+# method 2 to get count of na values
+numberOfNa_later = length(which(is.na(train_data)))
+print(paste('count of na values after handling: ', numberOfNa_later))
+```
+
+# Step10 : Build a basic model
+
+```{r}
+model1 = lm(formula = TotalRevenueGenerated  ~ ., data = train_data) 
+summary(model1)
+```
+
+# It can be seen that p-value of the F-statistic is < 2.2e-16. This small number means that, at least, one of the predictor variables is significantly related to the outcome variable.
+
+# Step11 : Now that we finally have our model it is time to test how good it actually is.
+
+```{r}
+data_size = dim(raw_data)
+pred = predict(model1, test_data)
+numx = data_size[1]*0.3
+x_axis = seq(numx)
+x_axis = c(x_axis, 481.5)
+df = data.frame(x_axis, pred, test_data$TotalRevenueGenerated)
+```
+
+
+# Step12 : Plotting the predicted values against the actual values
+
+```{r}
+library(ggplot2)
+g <- ggplot(df, aes(x=x_axis))
+g <- g + geom_line(aes(y=pred, colour="Predicted"))
+g <- g + geom_point(aes(x=x_axis, y=pred, colour="Predicted"))
+g <- g + geom_line(aes(y=test_data$TotalRevenueGenerated, colour="Actual"))
+g <- g + geom_point(aes(x=x_axis, y=test_data$TotalRevenueGenerated, colour="Actual"))
+g <- g + scale_colour_manual("", values = c(Predicted="red", Actual="blue"))
+g
+```
+
+# Regression model evaluation metrics The MSE, MAE, RMSE, and R-Squared metrics
+# are mainly used to evaluate the prediction error rates and model performance in
+# regression analysis. MAE (Mean absolute error) represents the difference between
+# the original and predicted values. We get this number by averaging the absolute
+# difference over the data set. MSE (Mean Squared Error) represents the difference
+# between the original and predicted values extracted by averaging the squared
+# difference over the data set. RMSE (Root Mean Squared Error) is the square root
+# of the the arithmetic mean of the squares of difference over the set. R-squared
+# (Coefficient of determination) represents the coefficient of how well the values
+# fit compared to the original values. The value from 0 to 1 interpreted as
+# percentages. The higher the value is, the better the model is.
+
+# Step12 : Regression model evaluation metrics
+
+```{r}
+#Evaluation
+original = test_data$TotalRevenueGenerated
+predicted = pred
+d = original-predicted
+mse = mean((d)^2)
+mae = mean(abs(d))
+rmse = sqrt(mse)
+R2 = 1-(sum((d)^2)/sum((original-mean(original))^2))
+cat(" MAE:", mae, "\n", "MSE:", mse, "\n", 
+    "RMSE:", rmse, "\n", "R-squared:", R2)
+```
+
+# R-squared value of 0.688 isn't the best and let's rework on the model to better it.

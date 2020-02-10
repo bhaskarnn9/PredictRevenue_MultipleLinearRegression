@@ -1,0 +1,263 @@
+---
+title: "MultipleLinearRegression"
+author: "bneella@ltu.edu"
+date: "28/01/2020"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+# Step1 : Clear Environment
+
+```{r}
+rm(list = ls(all=TRUE))
+library(dplyr)
+library(caret)
+library(modes)
+library(gtools)
+library(ggplot2)
+library(corrplot)
+library(MASS)
+library(car)
+library(DMwR)
+library(psych)
+```
+
+# Step2 : Read and understand customer data
+
+```{r}
+raw_data = read.csv('CustomerData.csv')
+dim(raw_data)
+```
+
+# Step3 : Drop Customer ID because it has no significance
+
+```{r}
+raw_data$CustomerID = NULL
+writeLines('\n Customer data after dropping CustomerID')
+str(raw_data)
+```
+
+# Step4 : Convert City to categorical data
+
+```{r}
+raw_data$City = as.factor(raw_data$City)
+str(raw_data)
+```
+
+# Step5 : Understand the distribution and various variable in the data set
+```{r}
+summary(raw_data)
+```
+
+# Step6 : Split Train and Test data
+
+```{r}
+(sum((is.na(raw_data))))
+set.seed(007)
+train_rows = sample(x=1 : nrow(raw_data), size = 0.7*nrow(raw_data))
+train_data = raw_data[train_rows, ]
+test_data = raw_data[-train_rows, ]
+print('splitting data for train and test complete')
+```
+
+# Step7 : Handling NAs => We have 3 missing values in the column NoOfUnitsPurchased
+
+```{r}
+
+#create object with medianImpute values based on trainset
+imputer_values = preProcess(x = train_data, method = 'medianImpute')
+
+# now plug medianInpute values in trainset's NA values
+train_data = predict(object = imputer_values, newdata = train_data)
+
+# now plug medianInpute values in testset's NA values
+test_data <- predict(object = imputer_values, newdata = test_data)
+
+# method 2 to get count of na values
+numberOfNa_train_later = length(which(is.na(train_data)))
+numberOfNa_test_later = length(which(is.na(test_data)))
+print(paste('count of na values in trainset after handling: ', numberOfNa_train_later))
+print(paste('count of na values in testset after handling: ', numberOfNa_test_later))
+```
+
+
+```{r}
+str(train_data)
+str(test_data)
+```
+
+
+# Step8 : Let's explore few bi-variate relationships in the data to understand it better.
+
+```{r}
+par(mfrow = c(2,2))
+
+plot(raw_data$NoOfGamesBought, raw_data$TotalRevenueGenerated, xlab="NoOfGamesBought", ylab="TotalRevenueGenerated", main="NoOfGamesBought vs Revenue")
+
+plot(raw_data$NoOfChildren, raw_data$TotalRevenueGenerated, xlab="NoOfChildren", ylab="TotalRevenueGenerated", main="NoOfChildren vs Revenue")
+
+plot(raw_data$MinAgeOfChild, raw_data$TotalRevenueGenerated, xlab="MinAgeOfChild", ylab="TotalRevenueGenerated", main="MinAgeOfChild vs Revenue")
+
+plot(raw_data$FrequencyOfPurchase, raw_data$TotalRevenueGenerated, xlab="FrequencyOfPurchase", ylab="TotalRevenueGenerated", main="FrequencyOfPurchase vs Revenue")
+```
+
+# Step9 : Split int and factorial data for cor plot
+
+```{r}
+cols = colnames(train_data)
+intattr = c()
+catattr = c()
+for (i in cols) {
+  if (is.factor(train_data[,c(i)]) == T) {
+    catattr = c(catattr, i)
+  } else {
+    intattr = c(intattr, i)
+  }
+}
+cat("\n Categorical attributes = ", catattr)
+cat("\n Int attributes = ", intattr)
+str(raw_data)
+```
+
+# Step10 : Let us check correlation plot to determnine important features
+
+```{r}
+# method1
+cor_val = lowerCor(raw_data[,-c(1, 11, 12)]) # remove categorical data
+```
+
+```{r}
+# Let's focus on the corr values of features with TotalRevenueGenerated i.e., last row without las column in it
+(cor_val[10,-10])
+```
+
+```{r}
+# method2
+corrplot(cor(raw_data[, intattr], use = "complete.obs"), method = 'number')
+```
+
+
+# Step11 : Chisquare test on categorical attributes
+
+```{r}
+# please note chisq approx may be incorrect
+contigency3 =table(train_data$FavoriteChannelOfTransaction, train_data$FavoriteGame)
+(chisq.test(contigency3))
+```
+
+# Null Hypothesis in chi-squared test for independence is that two attributes are independent
+# since pvalue is greater than 0.05 we are willing to accept the null hypothesis that they are independent
+
+# Step12 : Let us now standardize the data
+
+```{r}
+cols = colnames(train_data[, !names(train_data)%in%c("TotalRevenueGenerated")])
+intattr = c()
+catattr = c()
+for (i in cols) {
+  if (is.factor(train_data[,c(i)]) == T) {
+    catattr = c(catattr, i)
+  } else {
+    intattr = c(intattr, i)
+  }
+}
+std_model = preProcess(train_data[, intattr], method = c("center", "scale"))
+
+train_data[, intattr] = predict(object = std_model, newdata=train_data[, intattr])
+test_data[, intattr] = predict(object = std_model, newdata=test_data[, intattr])
+```
+
+# Step13 : Let's build model
+
+```{r}
+basic_model = lm(formula = TotalRevenueGenerated ~ ., data = train_data)
+summary(basic_model)
+```
+
+# Step14 : Let's look at the model's performance visually
+
+```{r}
+par(mfrow = c(2,2))
+plot(basic_model)
+```
+
+# Adjusted R-Sq of 0.7278 means that our model explain over 72% of the data. This is an improvement over previous model which was able to explain only about 69% of the data.
+
+# Let us tweak the model to see if can explain more data
+
+
+# Based on corrplot NoOfUnitsPurchased + FrequencyOfPurchase + NoOfGamesBought + NoOfGamesPlayed + FrequencyOfPlay are the most influential features in that order
+```{r}
+model_corr = lm(formula = TotalRevenueGenerated ~ NoOfUnitsPurchased + FrequencyOfPurchase + NoOfGamesBought + NoOfGamesPlayed + FrequencyOfPlay, data = train_data)
+summary(model_corr)
+```
+
+# Step14 : Step AIC
+
+```{r}
+aic_model = stepAIC(basic_model, direction = "both")
+```
+# let's look at summary of AIC model
+```{r}
+summary(aic_model)
+```
+# As can be seen, aic_model has been absolutely insignificant with regard to improvement as the gain is extremely small (0.7279 Vs 0.7278)
+
+# Step15 : Let's now modify the model with VIF
+
+```{r}
+vif(basic_model)
+```
+
+```{r}
+vif(aic_model)
+```
+
+# After applying the stepAIC, the VIF values have slightly reduced, but the variables “FrequencyOfPurchase”, “NoOfGamesBought”, and “NoOfUnitsPurchased” have VIF values higher than 4
+
+```{r}
+model_4 = lm(formula = TotalRevenueGenerated ~ City + MinAgeOfChild + FrequencyOfPlay + NoOfGamesPlayed + FavoriteChannelOfTransaction + FavoriteGame, data = train_data)
+summary(model_4)
+```
+
+# As can be seen dropping 3 featues isn't probably the best idea (since R-squared:0.1046). Let's only drop FrequencyOfPurchase and retain the other two for the next model and see how it fares.
+
+```{r}
+model_5 = lm(formula = TotalRevenueGenerated ~ City + MinAgeOfChild + FrequencyOfPlay + NoOfGamesPlayed + FavoriteChannelOfTransaction + NoOfUnitsPurchased + NoOfGamesBought + FrequencyOfPurchase, data = train_data)
+summary(model_5)
+```
+
+# So dropping FavoriteGame had no impact and slightly helped
+
+# Let's experiment more
+
+```{r}
+model_6 = lm(formula = TotalRevenueGenerated ~ City + MinAgeOfChild + FrequencyOfPlay + NoOfGamesPlayed + NoOfUnitsPurchased + NoOfGamesBought + FrequencyOfPurchase + FavoriteChannelOfTransaction, data = train_data)
+summary(model_6)
+```
+
+# It seems to me that model_5 is the best one.
+# Step16 : Let's look at the model_5's performance visually
+
+```{r}
+par(mfrow = c(2,2))
+plot(model_5)
+```
+
+# Step17 : Regression model evaluation metrics
+
+```{r}
+#Evaluation
+preds = predict(model_5, test_data[, !names(test_data) %in% c("TotalRevenueGenerated")])
+regr.eval(test_data$TotalRevenueGenerated, preds)
+```
